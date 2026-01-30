@@ -23,9 +23,7 @@ export function getFirebaseApp() {
   return _app;
 }
 
-/**
- * 只在瀏覽器端取用（避免 SSR/build 階段 window 問題）
- */
+/** SSR/build 階段不要碰 auth/db（會引爆 window 問題） */
 export function getFirebaseAuth() {
   if (typeof window === "undefined") return null;
   if (_auth) return _auth;
