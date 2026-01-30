@@ -317,3 +317,45 @@ export default function Page() {
                   style={{
                     border: "1px solid rgba(0,0,0,.10)",
                     borderRadius: 12,
+                    padding: "8px 10px",
+                    background: "rgba(0,0,0,.03)",
+                    minWidth: 240
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button className="btn btn-sm btn-light" onClick={() => onLoadPalette(p)}>
+                        載入
+                      </button>
+                      <button className="btn btn-sm btn-light" onClick={() => onDeletePalette(p.id)}>
+                        刪除
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    {(p.colors ?? []).slice(0, 5).map((hx, i) => (
+                      <div
+                        key={i}
+                        title={hx}
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: 6,
+                          background: hx,
+                          border: "1px solid rgba(0,0,0,.12)"
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
