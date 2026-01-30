@@ -18,13 +18,18 @@ async function copyText(text: string) {
   }
 }
 
-function bestTextColor(hex: string) {
+function hexNoHash(hex: string) {
+  return hex.replace("#", "").toUpperCase();
+}
+
+function textColorFor(hex: string) {
+  // simple luminance threshold
   const c = hex.replace("#", "");
   const r = parseInt(c.slice(0, 2), 16);
   const g = parseInt(c.slice(2, 4), 16);
   const b = parseInt(c.slice(4, 6), 16);
-  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  return luminance > 0.6 ? "#111111" : "#FFFFFF";
+  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return lum > 0.62 ? "#0b1220" : "#ffffff";
 }
 
 export default function Page() {
@@ -105,7 +110,7 @@ export default function Page() {
     showToast("已載入該組配色");
   }
 
-  // Space 生成（避免在 input 打字時觸發）
+  // Space generate (avoid when typing)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -126,7 +131,6 @@ export default function Page() {
   useEffect(() => {
     const a = getFirebaseAuth();
     if (!a) return;
-
     const unsub = onAuthStateChanged(a, async (u) => {
       setUser(u);
       if (u) await refreshSaved(u);
@@ -136,224 +140,185 @@ export default function Page() {
   }, []);
 
   return (
-    <div className="container py-4">
-      <div className="glass p-3 p-md-4 mb-4">
-        <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3">
-          <div>
-            <div className="d-flex align-items-center gap-3">
-              <div
-                className="rounded-circle"
-                style={{
-                  width: 44,
-                  height: 44,
-                  background: "linear-gradient(135deg, var(--c1), var(--c4))",
-                  border: "1px solid rgba(255,255,255,0.18)"
-                }}
-              />
-              <div>
-                <div className="h5 mb-0">Coolors Lite</div>
-                <div className="small-muted">
-                  按 <span className="badge badge-soft mono">Space</span> 產生新一批（鎖住的不會被替換）
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="d-flex flex-wrap gap-2 align-items-center">
-            <button className="btn btn-theme" onClick={generate}>
-              Generate (Space)
-            </button>
-
-            <button
-              className="btn btn-ghost"
-              onClick={async () => {
-                const ok = await copyText(copyLine);
-                showToast(ok ? "已複製：b5d6b2-..." : "複製失敗");
-              }}
-              title="Copy like Coolors format"
-            >
-              Copy Palette
-            </button>
-
-            {!user ? (
-              <button className="btn btn-ghost" onClick={doGoogleLogin}>
-                Google 登入
-              </button>
-            ) : (
-              <>
-                <div className="small-muted">{user.displayName ?? "User"}</div>
-                <button
-                  className="btn btn-ghost"
-                  onClick={async () => {
-                    const a = mustAuth();
-                    await signOut(a);
-                    showToast("已登出");
-                  }}
-                >
-                  登出
-                </button>
-              </>
-            )}
-          </div>
+    <div>
+      {/* Top bar like Coolors */}
+      <div className="topbar">
+        <div className="brand">
+          <div className="brand-badge" />
+          <div>COOLORS LITE</div>
         </div>
 
-        <div className="mt-3 d-flex flex-column flex-md-row gap-2 align-items-md-center">
-          <div className="flex-grow-1">
+        <div className="topbar-right">
+          <span className="pill mono">{copyLine}</span>
+
+          <button
+            className="top-btn"
+            onClick={async () => {
+              const ok = await copyText(copyLine);
+              showToast(ok ? "已複製整組 palette" : "複製失敗");
+            }}
+            title="Copy palette (no #)"
+          >
+            Copy
+          </button>
+
+          {!user ? (
+            <button className="top-btn" onClick={doGoogleLogin}>
+              Google 登入
+            </button>
+          ) : (
+            <>
+              <span className="pill">{user.displayName ?? "User"}</span>
+              <button
+                className="top-btn"
+                onClick={async () => {
+                  const a = mustAuth();
+                  await signOut(a);
+                  showToast("已登出");
+                }}
+              >
+                登出
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="coolors-wrap">
+        <div className="hint">
+          Press the <span className="mono">spacebar</span> to generate color palettes!（鎖住的不會被替換）
+        </div>
+
+        {/* Full height columns */}
+        <div className="palette">
+          {colors.map((c) => {
+            const text = textColorFor(c.hex);
+            const name = guessColorName(c.hex);
+            const isDarkText = text !== "#ffffff";
+
+            return (
+              <div key={c.id} className="col" style={{ background: c.hex }}>
+                <div className="col-inner">
+                  {/* Mid tools */}
+                  <div className="mid-tools">
+                    <div
+                      className={`icon-btn ${isDarkText ? "" : "dark"}`}
+                      title={c.locked ? "Unlock" : "Lock"}
+                      onClick={() => toggleLock(c.id)}
+                    >
+                      {c.locked ? "🔒" : "🔓"}
+                    </div>
+
+                    <div
+                      className={`icon-btn ${isDarkText ? "" : "dark"}`}
+                      title="Copy HEX"
+                      onClick={async () => {
+                        const ok = await copyText(c.hex);
+                        showToast(ok ? `已複製 ${c.hex}` : "複製失敗");
+                      }}
+                    >
+                      ⧉
+                    </div>
+
+                    <div
+                      className={`icon-btn ${isDarkText ? "" : "dark"}`}
+                      title="Copy without #"
+                      onClick={async () => {
+                        const ok = await copyText(hexNoHash(c.hex));
+                        showToast(ok ? `已複製 ${hexNoHash(c.hex)}` : "複製失敗");
+                      }}
+                    >
+                      #
+                    </div>
+                  </div>
+
+                  {/* Bottom label */}
+                  <div className="bottom" style={{ color: text }}>
+                    <div className="hex mono">{hexNoHash(c.hex)}</div>
+                    <div className="name">{name}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Save panel (simple, like small drawer) */}
+        <div style={{ padding: "12px 18px", borderTop: "1px solid rgba(0,0,0,.08)", background: "#fff" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <input
               className="form-control"
-              placeholder={user ? "幫這批配色取個名字（例如：Exam UI - Warm）" : "登入後才能儲存"}
+              style={{ maxWidth: 420 }}
+              placeholder={user ? "命名後儲存這批（例如：Exam UI）" : "登入後才能儲存"}
               value={savingName}
               onChange={(e) => setSavingName(e.target.value)}
               disabled={!user}
             />
+            <button className="btn btn-light" onClick={onSavePalette} disabled={!user}>
+              Save
+            </button>
+
+            {user && (
+              <button
+                className="btn btn-outline-secondary"
+                onClick={async () => {
+                  await refreshSaved(user);
+                  showToast("已刷新收藏");
+                }}
+              >
+                Refresh
+              </button>
+            )}
           </div>
-          <button className="btn btn-theme" onClick={onSavePalette} disabled={!user}>
-            儲存這批
-          </button>
-        </div>
 
-        <div className="small-muted mt-2">
-          目前這批（可複製）：<span className="mono">{copyLine}</span>
-        </div>
-      </div>
-
-      <div className="row g-3">
-        {colors.map((c) => {
-          const text = bestTextColor(c.hex);
-          const name = guessColorName(c.hex);
-
-          return (
-            <div className="col-12 col-md-6 col-lg-4 col-xl" key={c.id}>
-              <div className="color-tile" style={{ background: c.hex }}>
-                <div className="tile-top">
-                  <div className="d-flex flex-column gap-1">
-                    <div className="badge badge-soft mono" style={{ color: text }}>
-                      {c.hex}
-                    </div>
-                    <div className="small fw-semibold" style={{ color: text }}>
-                      {name}
+          {/* Saved palettes list */}
+          {user && saved.length > 0 && (
+            <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {saved.slice(0, 8).map((p) => (
+                <div
+                  key={p.id}
+                  style={{
+                    border: "1px solid rgba(0,0,0,.10)",
+                    borderRadius: 12,
+                    padding: "8px 10px",
+                    background: "rgba(0,0,0,.03)",
+                    minWidth: 240
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button className="btn btn-sm btn-light" onClick={() => onLoadPalette(p)}>
+                        載入
+                      </button>
+                      <button className="btn btn-sm btn-light" onClick={() => onDeletePalette(p.id)}>
+                        刪除
+                      </button>
                     </div>
                   </div>
-
-                  <button
-                    className="btn btn-sm"
-                    onClick={() => toggleLock(c.id)}
-                    style={{
-                      background: c.locked ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.18)",
-                      border: "1px solid rgba(255,255,255,0.22)",
-                      color: text
-                    }}
-                    title={c.locked ? "Unlock" : "Lock"}
-                  >
-                    {c.locked ? "🔒" : "🔓"}
-                  </button>
-                </div>
-
-                <div className="tile-bottom">
-                  <button
-                    className="btn btn-sm"
-                    onClick={async () => {
-                      const ok = await copyText(c.hex);
-                      showToast(ok ? "已複製色號" : "複製失敗");
-                    }}
-                    style={{
-                      background: "rgba(0,0,0,0.25)",
-                      border: "1px solid rgba(255,255,255,0.18)",
-                      color: text
-                    }}
-                  >
-                    Copy HEX
-                  </button>
-
-                  <div className="small fw-semibold mono" style={{ color: text, opacity: 0.9 }}>
-                    {c.locked ? "LOCKED" : "UNLOCKED"}
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    {(p.colors ?? []).slice(0, 5).map((hx, i) => (
+                      <div
+                        key={i}
+                        title={hx}
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: 6,
+                          background: hx,
+                          border: "1px solid rgba(0,0,0,.12)"
+                        }}
+                      />
+                    ))}
                   </div>
                 </div>
-              </div>
+              ))}
             </div>
-          );
-        })}
+          )}
+        </div>
       </div>
 
-      <div className="glass p-3 p-md-4 mt-4">
-        <div className="d-flex align-items-center justify-content-between gap-2">
-          <div>
-            <div className="h5 mb-1">我的收藏</div>
-            <div className="small-muted">每個使用者自己的 Firestore palettes</div>
-          </div>
-          <button
-            className="btn btn-ghost"
-            onClick={async () => {
-              if (!user) return showToast("請先登入");
-              await refreshSaved(user);
-              showToast("已刷新");
-            }}
-          >
-            Refresh
-          </button>
-        </div>
-
-        {!user ? (
-          <div className="mt-3 small-muted">登入後就會看到你存的配色。</div>
-        ) : saved.length === 0 ? (
-          <div className="mt-3 small-muted">你還沒儲存任何配色。</div>
-        ) : (
-          <div className="mt-3 d-flex flex-column gap-2">
-            {saved.map((p) => (
-              <div key={p.id} className="glass p-3" style={{ borderRadius: 14 }}>
-                <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2">
-                  <div>
-                    <div className="fw-semibold">{p.name}</div>
-                    <div className="small-muted mono">{(p.colors ?? []).join(" - ")}</div>
-                    <div className="d-flex flex-wrap gap-2 mt-2">
-                      {(p.colors ?? []).slice(0, 5).map((hex, idx) => (
-                        <div
-                          key={idx}
-                          title={hex}
-                          style={{
-                            width: 22,
-                            height: 22,
-                            borderRadius: 8,
-                            background: hex,
-                            border: "1px solid rgba(255,255,255,0.22)"
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="d-flex gap-2">
-                    <button className="btn btn-theme" onClick={() => onLoadPalette(p)}>
-                      載入
-                    </button>
-                    <button
-                      className="btn btn-ghost"
-                      onClick={async () => {
-                        const ok = await copyText((p.colors ?? []).join("-").replaceAll("#", ""));
-                        showToast(ok ? "已複製該組" : "複製失敗");
-                      }}
-                    >
-                      複製
-                    </button>
-                    <button className="btn btn-ghost" onClick={() => onDeletePalette(p.id)}>
-                      刪除
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {toast && (
-        <div
-          className="position-fixed bottom-0 start-50 translate-middle-x mb-4 px-3 py-2 glass"
-          style={{ borderRadius: 999, zIndex: 9999 }}
-        >
-          <span className="mono">{toast}</span>
-        </div>
-      )}
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }
