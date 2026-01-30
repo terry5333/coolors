@@ -1,26 +1,33 @@
 import "./globals.css";
+import type { Metadata } from "next";
 
-export const metadata = {
-  title: "Coolors Lite",
-  description: "A simple Coolors-like palette generator"
+export const metadata: Metadata = {
+  title: {
+    default: "Coolors Lite",
+    template: "%s | Coolors Lite",
+  },
+  description: "A Coolors-inspired color palette generator with cloud saving.",
+  icons: {
+    // 🔥 關鍵：加版本號，強制瀏覽器刷新 favicon
+    icon: "/favicon.ico?v=2",
+    shortcut: "/favicon.ico?v=2",
+  },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="zh-Hant">
       <head>
-        <link
-          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-          rel="stylesheet"
-        />
+        {/* 🔥 雙保險：有些瀏覽器只吃 link */}
+        <link rel="icon" href="/favicon.ico?v=2" sizes="any" />
+        <link rel="shortcut icon" href="/favicon.ico?v=2" />
+        <meta name="theme-color" content="#FFFACC" />
       </head>
-      <body>
-        <div className="app-shell">{children}</div>
-        <script
-          src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
-          defer
-        />
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
