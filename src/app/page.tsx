@@ -40,6 +40,8 @@ export default function Page() {
   const [saved, setSaved] = useState<SavedPalette[]>([]);
   const [savingName, setSavingName] = useState<string>("");
 
+  const [showSavePanel, setShowSavePanel] = useState(false);
+
   const toastTimer = useRef<number | null>(null);
 
   const paletteHexes = useMemo(() => colors.map((c) => c.hex), [colors]);
@@ -142,8 +144,12 @@ export default function Page() {
     if (!a) return;
     const unsub = onAuthStateChanged(a, async (u) => {
       setUser(u);
-      if (u) await refreshSaved(u);
-      else setSaved([]);
+      if (u) {
+        await refreshSaved(u);
+      } else {
+        setSaved([]);
+        setShowSavePanel(false);
+      }
     });
     return () => unsub();
   }, []);
@@ -169,6 +175,29 @@ export default function Page() {
             title="Copy palette (no #)"
           >
             Copy
+          </button>
+
+          {/* ❤️ 收藏/儲存 面板 */}
+          <button
+            className="top-btn"
+            onClick={async () => {
+              if (!user) {
+                showToast("請先 Google 登入");
+                return;
+              }
+              const next = !showSavePanel;
+              setShowSavePanel(next);
+              if (next) {
+                await refreshSaved(user);
+              }
+            }}
+            title="收藏 / 儲存"
+            style={{
+              borderColor: showSavePanel ? "rgba(255,0,80,.35)" : undefined,
+              background: showSavePanel ? "rgba(255,0,80,.06)" : undefined
+            }}
+          >
+            {showSavePanel ? "♥" : "♡"}
           </button>
 
           {!user ? (
@@ -198,7 +227,7 @@ export default function Page() {
           Press the <span className="mono">spacebar</span> to generate color palettes!（鎖住的不會被替換）
         </div>
 
-        {/* 左側 + 按鈕（像 Coolors） */}
+        {/* 左側 + 按鈕 */}
         <button
           onClick={addSlot}
           title={colors.length >= MAX ? `最多 ${MAX} 格` : "新增一格"}
@@ -276,83 +305,97 @@ export default function Page() {
           })}
         </div>
 
-        {/* Save panel */}
-        <div style={{ padding: "12px 18px", borderTop: "1px solid rgba(0,0,0,.08)", background: "#fff" }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <input
-              className="form-control"
-              style={{ maxWidth: 420 }}
-              placeholder={user ? "命名後儲存這批（例如：Exam UI）" : "登入後才能儲存"}
-              value={savingName}
-              onChange={(e) => setSavingName(e.target.value)}
-              disabled={!user}
-            />
-            <button className="btn btn-light" onClick={onSavePalette} disabled={!user}>
-              Save
-            </button>
-
-            {user && (
-              <button
-                className="btn btn-outline-secondary"
-                onClick={async () => {
-                  await refreshSaved(user);
-                  showToast("已刷新收藏");
-                }}
-              >
-                Refresh
+        {/* ❤️ 儲存抽屜（點愛心才出現） */}
+        {showSavePanel && (
+          <div
+            style={{
+              padding: "12px 18px",
+              borderTop: "1px solid rgba(0,0,0,.08)",
+              background: "#fff"
+            }}
+          >
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                className="form-control"
+                style={{ maxWidth: 420 }}
+                placeholder={"命名後儲存這批（例如：Exam UI）"}
+                value={savingName}
+                onChange={(e) => setSavingName(e.target.value)}
+                disabled={!user}
+              />
+              <button className="btn btn-light" onClick={onSavePalette} disabled={!user}>
+                Save
               </button>
-            )}
 
-            <span style={{ marginLeft: "auto", fontSize: 12, opacity: 0.65 }}>
-              格數：{colors.length}/{MAX}
-            </span>
-          </div>
-
-          {/* Saved palettes list */}
-          {user && saved.length > 0 && (
-            <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {saved.slice(0, 8).map((p) => (
-                <div
-                  key={p.id}
-                  style={{
-                    border: "1px solid rgba(0,0,0,.10)",
-                    borderRadius: 12,
-                    padding: "8px 10px",
-                    background: "rgba(0,0,0,.03)",
-                    minWidth: 240
+              {user && (
+                <button
+                  className="btn btn-outline-secondary"
+                  onClick={async () => {
+                    await refreshSaved(user);
+                    showToast("已刷新收藏");
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button className="btn btn-sm btn-light" onClick={() => onLoadPalette(p)}>
-                        載入
-                      </button>
-                      <button className="btn btn-sm btn-light" onClick={() => onDeletePalette(p.id)}>
-                        刪除
-                      </button>
+                  Refresh
+                </button>
+              )}
+
+              <span style={{ marginLeft: "auto", fontSize: 12, opacity: 0.65 }}>
+                格數：{colors.length}/{MAX}
+              </span>
+            </div>
+
+            {user && saved.length === 0 && (
+              <div style={{ marginTop: 10, fontSize: 13, opacity: 0.65 }}>
+                你還沒儲存任何配色。
+              </div>
+            )}
+
+            {/* Saved palettes list */}
+            {user && saved.length > 0 && (
+              <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {saved.slice(0, 10).map((p) => (
+                  <div
+                    key={p.id}
+                    style={{
+                      border: "1px solid rgba(0,0,0,.10)",
+                      borderRadius: 12,
+                      padding: "8px 10px",
+                      background: "rgba(0,0,0,.03)",
+                      minWidth: 240
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button className="btn btn-sm btn-light" onClick={() => onLoadPalette(p)}>
+                          載入
+                        </button>
+                        <button className="btn btn-sm btn-light" onClick={() => onDeletePalette(p.id)}>
+                          刪除
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                      {(p.colors ?? []).slice(0, 5).map((hx, i) => (
+                        <div
+                          key={i}
+                          title={hx}
+                          style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: 6,
+                            background: hx,
+                            border: "1px solid rgba(0,0,0,.12)"
+                          }}
+                        />
+                      ))}
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                    {(p.colors ?? []).slice(0, 5).map((hx, i) => (
-                      <div
-                        key={i}
-                        title={hx}
-                        style={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: 6,
-                          background: hx,
-                          border: "1px solid rgba(0,0,0,.12)"
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {toast && <div className="toast">{toast}</div>}
