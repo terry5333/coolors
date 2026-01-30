@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
-import { auth } from "../lib/firebase";
+import { getFirebaseAuth } from "../lib/firebase";
 import { createPalette, regenUnlocked, PaletteColor } from "../lib/palette";
 import { guessColorName } from "../lib/colorName";
 import { listPalettes, removePalette, savePalette, SavedPalette } from "../lib/firestore";
@@ -19,7 +19,6 @@ async function copyText(text: string) {
 }
 
 function bestTextColor(hex: string) {
-  // 簡單亮度判斷（夠用）
   const c = hex.replace("#", "");
   const r = parseInt(c.slice(0, 2), 16);
   const g = parseInt(c.slice(2, 4), 16);
@@ -55,9 +54,16 @@ export default function Page() {
     setColors((prev) => prev.map((c) => (c.id === id ? { ...c, locked: !c.locked } : c)));
   }
 
+  function mustAuth() {
+    const a = getFirebaseAuth();
+    if (!a) throw new Error("Auth is not available on server side.");
+    return a;
+  }
+
   async function doGoogleLogin() {
+    const a = mustAuth();
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    await signInWithPopup(a, provider);
   }
 
   async function refreshSaved(u: User) {
@@ -89,16 +95,12 @@ export default function Page() {
   }
 
   async function onLoadPalette(p: SavedPalette) {
-    // 載入成目前這批（鎖頭全部先關）
-    const next: PaletteColor[] = p.colors.slice(0, SIZE).map((hex) => ({
+    const next: PaletteColor[] = (p.colors ?? []).slice(0, SIZE).map((hex) => ({
       id: Math.random().toString(16).slice(2) + Date.now().toString(16),
       hex: hex.toUpperCase(),
       locked: false
     }));
-    // 不足補齊
-    while (next.length < SIZE) {
-      next.push(...createPalette(1));
-    }
+    while (next.length < SIZE) next.push(...createPalette(1));
     setColors(next.slice(0, SIZE));
     showToast("已載入該組配色");
   }
@@ -122,7 +124,10 @@ export default function Page() {
 
   // Auth state
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    const a = getFirebaseAuth();
+    if (!a) return;
+
+    const unsub = onAuthStateChanged(a, async (u) => {
       setUser(u);
       if (u) await refreshSaved(u);
       else setSaved([]);
@@ -132,7 +137,6 @@ export default function Page() {
 
   return (
     <div className="container py-4">
-      {/* Header */}
       <div className="glass p-3 p-md-4 mb-4">
         <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3">
           <div>
@@ -177,13 +181,12 @@ export default function Page() {
               </button>
             ) : (
               <>
-                <div className="small-muted">
-                  {user.displayName ?? "User"}
-                </div>
+                <div className="small-muted">{user.displayName ?? "User"}</div>
                 <button
                   className="btn btn-ghost"
                   onClick={async () => {
-                    await signOut(auth);
+                    const a = mustAuth();
+                    await signOut(a);
                     showToast("已登出");
                   }}
                 >
@@ -194,7 +197,6 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Save bar */}
         <div className="mt-3 d-flex flex-column flex-md-row gap-2 align-items-md-center">
           <div className="flex-grow-1">
             <input
@@ -215,7 +217,6 @@ export default function Page() {
         </div>
       </div>
 
-      {/* Tiles */}
       <div className="row g-3">
         {colors.map((c) => {
           const text = bestTextColor(c.hex);
@@ -274,7 +275,6 @@ export default function Page() {
         })}
       </div>
 
-      {/* Saved list */}
       <div className="glass p-3 p-md-4 mt-4">
         <div className="d-flex align-items-center justify-content-between gap-2">
           <div>
@@ -304,9 +304,7 @@ export default function Page() {
                 <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2">
                   <div>
                     <div className="fw-semibold">{p.name}</div>
-                    <div className="small-muted mono">
-                      {(p.colors ?? []).join(" - ")}
-                    </div>
+                    <div className="small-muted mono">{(p.colors ?? []).join(" - ")}</div>
                     <div className="d-flex flex-wrap gap-2 mt-2">
                       {(p.colors ?? []).slice(0, 5).map((hex, idx) => (
                         <div
