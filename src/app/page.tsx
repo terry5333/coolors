@@ -1,7 +1,13 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  User
+} from "firebase/auth";
 import { getFirebaseAuth } from "../lib/firebase";
 import { addOneColor, createPalette, regenUnlocked, PaletteColor } from "../lib/palette";
 import { guessColorName } from "../lib/colorName";
@@ -40,12 +46,22 @@ export default function Page() {
   const [saved, setSaved] = useState<SavedPalette[]>([]);
   const [savingName, setSavingName] = useState<string>("");
 
-  const [showSavePanel, setShowSavePanel] = useState(false);
+  // ❤️ Drawer open/close
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Search UI (先做 UI；你要功能我也能補)
+  const [search, setSearch] = useState("");
 
   const toastTimer = useRef<number | null>(null);
 
   const paletteHexes = useMemo(() => colors.map((c) => c.hex), [colors]);
   const copyLine = useMemo(() => paletteHexes.join("-").replaceAll("#", ""), [paletteHexes]);
+
+  const filteredSaved = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return saved;
+    return saved.filter((p) => (p.name ?? "").toLowerCase().includes(q));
+  }, [saved, search]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -133,6 +149,9 @@ export default function Page() {
         e.preventDefault();
         generate();
       }
+      if (e.code === "Escape") {
+        setDrawerOpen(false);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -148,14 +167,274 @@ export default function Page() {
         await refreshSaved(u);
       } else {
         setSaved([]);
-        setShowSavePanel(false);
+        setDrawerOpen(false);
       }
     });
     return () => unsub();
   }, []);
 
+  // Drawer open 時，鎖住 body scroll（像產品）
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [drawerOpen]);
+
   return (
     <div>
+      {/* Inline CSS: 讓你只覆蓋 page.tsx 也能直接變好看 + 有動畫 */}
+      <style jsx global>{`
+        :root{
+          --topbar-h: 56px;
+        }
+        .topbar{
+          height: var(--topbar-h);
+          display:flex;align-items:center;justify-content:space-between;
+          padding:0 18px;
+          border-bottom:1px solid rgba(0,0,0,.08);
+          background:#fff;
+          position:sticky;top:0;z-index:20;
+        }
+        .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.2px;}
+        .brand-badge{
+          width:32px;height:32px;border-radius:10px;
+          background:linear-gradient(135deg,#B5D6B2,#FFFACC);
+          border:1px solid rgba(0,0,0,.10);
+        }
+        .topbar-right{display:flex;align-items:center;gap:10px;}
+        .top-btn{
+          border:1px solid rgba(0,0,0,.10);
+          background:#fff;
+          padding:8px 10px;border-radius:10px;
+          font-size:14px;
+          transition: transform .15s ease, background .15s ease, border-color .15s ease;
+        }
+        .top-btn:hover{background:rgba(0,0,0,.03);}
+        .top-btn:active{transform:scale(.96);}
+        .pill{
+          padding:6px 10px;border-radius:999px;
+          background:rgba(0,0,0,.05);
+          border:1px solid rgba(0,0,0,.08);
+          font-size:12px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+        }
+        .heart-btn{transition: transform .15s ease, background .15s ease, border-color .15s ease; min-width:44px;}
+        .heart-btn.active{color:#ff3b6b;border-color:rgba(255,59,107,.35);background:rgba(255,59,107,.06);}
+        .heart-btn:active{transform:scale(.88);}
+
+        .coolors-wrap{height:calc(100vh - var(--topbar-h));display:flex;flex-direction:column;background:#fff;}
+        .hint{padding:10px 18px;font-size:14px;color:rgba(0,0,0,.65);}
+
+        .palette{flex:1;display:flex;width:100%;min-height:0;}
+        .col{flex:1;position:relative;display:flex;flex-direction:column;}
+        .col-inner{flex:1;position:relative;display:flex;flex-direction:column;}
+
+        .mid-tools{
+          position:absolute;left:16px;top:50%;transform:translateY(-50%);
+          display:flex;flex-direction:column;gap:10px;
+          opacity:0; pointer-events:none;
+          transition: opacity .18s ease, transform .18s ease;
+        }
+        .col:hover .mid-tools{opacity:1;pointer-events:auto; transform: translateY(-50%) scale(1.02);}
+
+        .icon-btn{
+          width:38px;height:38px;border-radius:999px;
+          border:1px solid rgba(255,255,255,.35);
+          background:rgba(255,255,255,.22);
+          backdrop-filter: blur(6px);
+          display:grid;place-items:center;
+          font-size:16px;cursor:pointer;user-select:none;
+          transition: transform .15s ease, background .15s ease;
+        }
+        .icon-btn:hover{background:rgba(255,255,255,.30);transform: translateY(-1px);}
+        .icon-btn:active{transform: scale(.95);}
+        .icon-btn.dark{
+          border:1px solid rgba(0,0,0,.22);
+          background:rgba(0,0,0,.14);
+          color:#fff;
+        }
+        .icon-btn.dark:hover{background:rgba(0,0,0,.22);}
+
+        .bottom{
+          padding:18px 16px 22px;
+          display:flex;align-items:flex-end;justify-content:center;
+          gap:8px;flex-direction:column;
+          transition: transform .18s ease;
+        }
+        .col:hover .bottom{transform: translateY(-2px);}
+        .hex{
+          font-weight:800;
+          font-size: clamp(28px, 2.2vw, 44px);
+          letter-spacing: 1px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+        }
+        .name{font-size:12px;opacity:.70;}
+
+        @media (max-width: 860px){
+          .palette{flex-direction:column;}
+          .mid-tools{flex-direction:row;left:16px;top:16px;transform:none;opacity:1;pointer-events:auto;}
+          .col:hover .mid-tools{transform:none;}
+          .bottom{align-items:flex-start;}
+        }
+
+        .toast{
+          position:fixed;left:50%;bottom:18px;transform:translateX(-50%);
+          padding:10px 14px;border-radius:999px;
+          background:rgba(0,0,0,.78);color:#fff;font-size:13px;
+          z-index:9999;
+        }
+
+        /* Floating + */
+        .plus-btn{
+          position:fixed;left:18px;top:120px;
+          width:44px;height:44px;border-radius:999px;
+          border:1px solid rgba(0,0,0,.12);
+          background:#fff;
+          box-shadow:0 6px 18px rgba(0,0,0,.10);
+          z-index:9998;
+          font-size:22px;line-height:44px;
+          cursor:pointer;
+          transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+        }
+        .plus-btn:hover{transform: translateY(-1px); box-shadow:0 10px 22px rgba(0,0,0,.12);}
+        .plus-btn:active{transform: scale(.96);}
+        .plus-btn.disabled{cursor:not-allowed; opacity:.55;}
+
+        /* ===== Drawer (像你圖一) ===== */
+        .drawer-backdrop{
+          position:fixed; inset:0;
+          background: rgba(0,0,0,.18);
+          backdrop-filter: blur(2px);
+          opacity:0; pointer-events:none;
+          transition: opacity .18s ease;
+          z-index:9997;
+        }
+        .drawer-backdrop.show{
+          opacity:1; pointer-events:auto;
+        }
+        .drawer{
+          position:fixed; top:0; right:0;
+          height:100vh; width:360px; max-width:90vw;
+          background:#fff;
+          box-shadow:-12px 0 32px rgba(0,0,0,.12);
+          transform: translateX(100%);
+          transition: transform .22s cubic-bezier(.4,0,.2,1);
+          z-index:9998;
+          display:flex; flex-direction:column;
+        }
+        .drawer.show{transform: translateX(0);}
+
+        .drawer-header{
+          padding:14px 16px;
+          border-bottom:1px solid rgba(0,0,0,.08);
+          display:flex; align-items:center; justify-content:space-between; gap:10px;
+        }
+        .drawer-title{
+          font-weight:700; font-size:14px;
+          display:flex; align-items:center; gap:6px;
+        }
+        .drawer-search{
+          width: 140px;
+          padding:6px 10px;
+          border-radius:10px;
+          border:1px solid rgba(0,0,0,.12);
+          font-size:13px;
+          outline:none;
+          transition: box-shadow .15s ease, border-color .15s ease;
+        }
+        .drawer-search:focus{
+          border-color: rgba(0,0,0,.22);
+          box-shadow: 0 0 0 3px rgba(0,0,0,.06);
+        }
+
+        .drawer-list{
+          padding:12px;
+          overflow-y:auto;
+          display:flex;
+          flex-direction:column;
+          gap:10px;
+        }
+        .palette-item{
+          border-radius:12px;
+          padding:10px;
+          background:#f7f7f8;
+          cursor:pointer;
+          transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+          position: relative;
+        }
+        .palette-item:hover{
+          transform: translateY(-2px);
+          box-shadow: 0 6px 16px rgba(0,0,0,.12);
+          background:#f5f5f7;
+        }
+        .palette-preview{
+          display:flex;
+          height:26px;
+          border-radius:8px;
+          overflow:hidden;
+          margin-bottom:6px;
+        }
+        .palette-preview > div{flex:1;}
+        .palette-name{font-size:13px;font-weight:600;}
+
+        .item-actions{
+          position:absolute;
+          top:8px; right:8px;
+          display:flex; gap:6px;
+          opacity:0; transform: translateY(-2px);
+          transition: opacity .15s ease, transform .15s ease;
+        }
+        .palette-item:hover .item-actions{
+          opacity:1; transform: translateY(0);
+        }
+        .mini-btn{
+          width:30px;height:30px;border-radius:10px;
+          border:1px solid rgba(0,0,0,.10);
+          background:#fff;
+          display:grid;place-items:center;
+          font-size:14px;
+          transition: transform .12s ease, background .12s ease;
+        }
+        .mini-btn:hover{background:rgba(0,0,0,.04); transform: translateY(-1px);}
+        .mini-btn:active{transform: scale(.96);}
+
+        .drawer-footer{
+          padding:12px;
+          border-top:1px solid rgba(0,0,0,.08);
+          background:#fff;
+        }
+        .save-row{
+          display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+        }
+        .save-input{
+          flex:1;
+          min-width: 180px;
+          padding:10px 12px;
+          border-radius:12px;
+          border:1px solid rgba(0,0,0,.12);
+          font-size:14px;
+          outline:none;
+          transition: box-shadow .15s ease, border-color .15s ease;
+        }
+        .save-input:focus{
+          border-color: rgba(0,0,0,.22);
+          box-shadow: 0 0 0 3px rgba(0,0,0,.06);
+        }
+        .save-btn{
+          padding:10px 12px;
+          border-radius:12px;
+          border:1px solid rgba(0,0,0,.10);
+          background:#fff;
+          font-weight:600;
+          transition: transform .12s ease, background .12s ease;
+        }
+        .save-btn:hover{background:rgba(0,0,0,.03);transform: translateY(-1px);}
+        .save-btn:active{transform: scale(.97);}
+      `}</style>
+
       {/* Top bar */}
       <div className="topbar">
         <div className="brand">
@@ -164,7 +443,7 @@ export default function Page() {
         </div>
 
         <div className="topbar-right">
-          <span className="pill mono">{copyLine}</span>
+          <span className="pill">{copyLine}</span>
 
           <button
             className="top-btn"
@@ -177,27 +456,21 @@ export default function Page() {
             Copy
           </button>
 
-          {/* ❤️ 收藏/儲存 面板 */}
+          {/* ❤️ Drawer toggle */}
           <button
-            className="top-btn"
+            className={`top-btn heart-btn ${drawerOpen ? "active" : ""}`}
             onClick={async () => {
               if (!user) {
                 showToast("請先 Google 登入");
                 return;
               }
-              const next = !showSavePanel;
-              setShowSavePanel(next);
-              if (next) {
-                await refreshSaved(user);
-              }
+              const next = !drawerOpen;
+              setDrawerOpen(next);
+              if (next && user) await refreshSaved(user);
             }}
-            title="收藏 / 儲存"
-            style={{
-              borderColor: showSavePanel ? "rgba(255,0,80,.35)" : undefined,
-              background: showSavePanel ? "rgba(255,0,80,.06)" : undefined
-            }}
+            title="Saved palettes"
           >
-            {showSavePanel ? "♥" : "♡"}
+            {drawerOpen ? "♥" : "♡"}
           </button>
 
           {!user ? (
@@ -206,7 +479,9 @@ export default function Page() {
             </button>
           ) : (
             <>
-              <span className="pill">{user.displayName ?? "User"}</span>
+              <span className="pill" style={{ fontFamily: "inherit" }}>
+                {user.displayName ?? "User"}
+              </span>
               <button
                 className="top-btn"
                 onClick={async () => {
@@ -231,22 +506,7 @@ export default function Page() {
         <button
           onClick={addSlot}
           title={colors.length >= MAX ? `最多 ${MAX} 格` : "新增一格"}
-          style={{
-            position: "fixed",
-            left: 18,
-            top: 120,
-            width: 44,
-            height: 44,
-            borderRadius: 999,
-            border: "1px solid rgba(0,0,0,.12)",
-            background: "#fff",
-            boxShadow: "0 6px 18px rgba(0,0,0,.10)",
-            zIndex: 9998,
-            cursor: colors.length >= MAX ? "not-allowed" : "pointer",
-            opacity: colors.length >= MAX ? 0.55 : 1,
-            fontSize: 22,
-            lineHeight: "44px"
-          }}
+          className={`plus-btn ${colors.length >= MAX ? "disabled" : ""}`}
         >
           +
         </button>
@@ -296,7 +556,7 @@ export default function Page() {
 
                   {/* Bottom label */}
                   <div className="bottom" style={{ color: text }}>
-                    <div className="hex mono">{hexNoHash(c.hex)}</div>
+                    <div className="hex">{hexNoHash(c.hex)}</div>
                     <div className="name">{name}</div>
                   </div>
                 </div>
@@ -304,98 +564,94 @@ export default function Page() {
             );
           })}
         </div>
+      </div>
 
-        {/* ❤️ 儲存抽屜（點愛心才出現） */}
-        {showSavePanel && (
-          <div
-            style={{
-              padding: "12px 18px",
-              borderTop: "1px solid rgba(0,0,0,.08)",
-              background: "#fff"
-            }}
-          >
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <input
-                className="form-control"
-                style={{ maxWidth: 420 }}
-                placeholder={"命名後儲存這批（例如：Exam UI）"}
-                value={savingName}
-                onChange={(e) => setSavingName(e.target.value)}
-                disabled={!user}
-              />
-              <button className="btn btn-light" onClick={onSavePalette} disabled={!user}>
-                Save
-              </button>
+      {/* Drawer backdrop */}
+      <div
+        className={`drawer-backdrop ${drawerOpen ? "show" : ""}`}
+        onClick={() => setDrawerOpen(false)}
+      />
 
-              {user && (
-                <button
-                  className="btn btn-outline-secondary"
-                  onClick={async () => {
-                    await refreshSaved(user);
-                    showToast("已刷新收藏");
-                  }}
-                >
-                  Refresh
-                </button>
-              )}
+      {/* Drawer */}
+      <div className={`drawer ${drawerOpen ? "show" : ""}`}>
+        <div className="drawer-header">
+          <div className="drawer-title">All palettes ▾</div>
+          <input
+            className="drawer-search"
+            placeholder="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
 
-              <span style={{ marginLeft: "auto", fontSize: 12, opacity: 0.65 }}>
-                格數：{colors.length}/{MAX}
-              </span>
+        <div className="drawer-list">
+          {filteredSaved.length === 0 ? (
+            <div style={{ fontSize: 13, opacity: 0.6 }}>
+              {saved.length === 0 ? "No saved palettes yet." : "No results."}
             </div>
-
-            {user && saved.length === 0 && (
-              <div style={{ marginTop: 10, fontSize: 13, opacity: 0.65 }}>
-                你還沒儲存任何配色。
-              </div>
-            )}
-
-            {/* Saved palettes list */}
-            {user && saved.length > 0 && (
-              <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                {saved.slice(0, 10).map((p) => (
-                  <div
-                    key={p.id}
-                    style={{
-                      border: "1px solid rgba(0,0,0,.10)",
-                      borderRadius: 12,
-                      padding: "8px 10px",
-                      background: "rgba(0,0,0,.03)",
-                      minWidth: 240
+          ) : (
+            filteredSaved.map((p) => (
+              <div
+                key={p.id}
+                className="palette-item"
+                onClick={() => {
+                  onLoadPalette(p);
+                  setDrawerOpen(false);
+                }}
+              >
+                {/* hover actions */}
+                <div className="item-actions" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className="mini-btn"
+                    title="Copy"
+                    onClick={async () => {
+                      const line = (p.colors ?? []).join("-").replaceAll("#", "");
+                      const ok = await copyText(line);
+                      showToast(ok ? "已複製該組" : "複製失敗");
                     }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button className="btn btn-sm btn-light" onClick={() => onLoadPalette(p)}>
-                          載入
-                        </button>
-                        <button className="btn btn-sm btn-light" onClick={() => onDeletePalette(p.id)}>
-                          刪除
-                        </button>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                      {(p.colors ?? []).slice(0, 5).map((hx, i) => (
-                        <div
-                          key={i}
-                          title={hx}
-                          style={{
-                            width: 18,
-                            height: 18,
-                            borderRadius: 6,
-                            background: hx,
-                            border: "1px solid rgba(0,0,0,.12)"
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                    ⧉
+                  </button>
+                  <button
+                    className="mini-btn"
+                    title="Delete"
+                    onClick={async () => {
+                      await onDeletePalette(p.id);
+                    }}
+                  >
+                    🗑
+                  </button>
+                </div>
+
+                <div className="palette-preview">
+                  {(p.colors ?? []).slice(0, 5).map((hx, i) => (
+                    <div key={i} style={{ background: hx }} />
+                  ))}
+                </div>
+                <div className="palette-name">{p.name}</div>
               </div>
-            )}
+            ))
+          )}
+        </div>
+
+        {/* Save footer */}
+        <div className="drawer-footer">
+          <div className="save-row">
+            <input
+              className="save-input"
+              placeholder="Name & save current palette"
+              value={savingName}
+              onChange={(e) => setSavingName(e.target.value)}
+              disabled={!user}
+            />
+            <button className="save-btn" onClick={onSavePalette} disabled={!user}>
+              Save
+            </button>
           </div>
-        )}
+          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.6 }}>
+            格數：{colors.length}/{MAX} · ESC 可關閉
+          </div>
+        </div>
       </div>
 
       {toast && <div className="toast">{toast}</div>}
