@@ -59,7 +59,7 @@ function hslToHex(h: number, s: number, l: number) {
 
 export function createPalette(count = 5): PaletteColor[] {
   const base = randomNiceHsl();
-  // 用類似 analogous 方式，讓五色更協調
+  // 用類似 analogous 方式，讓顏色更協調
   const step = randInt(18, 34);
   const start = base.h - step * Math.floor(count / 2);
 
@@ -77,4 +77,16 @@ export function regenUnlocked(prev: PaletteColor[]): PaletteColor[] {
   const fresh = createPalette(prev.length);
   let j = 0;
   return prev.map((p) => (p.locked ? p : { ...fresh[j++], locked: false }));
+}
+
+/** 新增一格（預設不鎖） */
+export function addOneColor(prev: PaletteColor[]): PaletteColor[] {
+  const one = createPalette(1)[0]!;
+  return [...prev, one];
+}
+
+/** 刪除一格（如果你之後要加 - 按鈕用） */
+export function removeOneColor(prev: PaletteColor[]): PaletteColor[] {
+  if (prev.length <= 1) return prev;
+  return prev.slice(0, -1);
 }
