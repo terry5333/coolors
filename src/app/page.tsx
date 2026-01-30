@@ -3,11 +3,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
 import { getFirebaseAuth } from "../lib/firebase";
-import { createPalette, regenUnlocked, PaletteColor } from "../lib/palette";
+import { addOneColor, createPalette, regenUnlocked, PaletteColor } from "../lib/palette";
 import { guessColorName } from "../lib/colorName";
 import { listPalettes, removePalette, savePalette, SavedPalette } from "../lib/firestore";
 
-const SIZE = 5;
+const DEFAULT_SIZE = 5;
+const MAX = 10;
 
 async function copyText(text: string) {
   try {
@@ -23,7 +24,6 @@ function hexNoHash(hex: string) {
 }
 
 function textColorFor(hex: string) {
-  // simple luminance threshold
   const c = hex.replace("#", "");
   const r = parseInt(c.slice(0, 2), 16);
   const g = parseInt(c.slice(2, 4), 16);
@@ -33,7 +33,7 @@ function textColorFor(hex: string) {
 }
 
 export default function Page() {
-  const [colors, setColors] = useState<PaletteColor[]>(() => createPalette(SIZE));
+  const [colors, setColors] = useState<PaletteColor[]>(() => createPalette(DEFAULT_SIZE));
   const [toast, setToast] = useState<string | null>(null);
 
   const [user, setUser] = useState<User | null>(null);
@@ -57,6 +57,14 @@ export default function Page() {
 
   function toggleLock(id: string) {
     setColors((prev) => prev.map((c) => (c.id === id ? { ...c, locked: !c.locked } : c)));
+  }
+
+  function addSlot() {
+    setColors((prev) => {
+      if (prev.length >= MAX) return prev;
+      return addOneColor(prev);
+    });
+    if (colors.length >= MAX) showToast(`最多 ${MAX} 格`);
   }
 
   function mustAuth() {
@@ -100,13 +108,14 @@ export default function Page() {
   }
 
   async function onLoadPalette(p: SavedPalette) {
-    const next: PaletteColor[] = (p.colors ?? []).slice(0, SIZE).map((hex) => ({
+    const want = Math.min(Math.max((p.colors ?? []).length, 1), MAX);
+    const next: PaletteColor[] = (p.colors ?? []).slice(0, want).map((hex) => ({
       id: Math.random().toString(16).slice(2) + Date.now().toString(16),
       hex: hex.toUpperCase(),
       locked: false
     }));
-    while (next.length < SIZE) next.push(...createPalette(1));
-    setColors(next.slice(0, SIZE));
+    while (next.length < want) next.push(...createPalette(1));
+    setColors(next.slice(0, want));
     showToast("已載入該組配色");
   }
 
@@ -141,7 +150,7 @@ export default function Page() {
 
   return (
     <div>
-      {/* Top bar like Coolors */}
+      {/* Top bar */}
       <div className="topbar">
         <div className="brand">
           <div className="brand-badge" />
@@ -188,6 +197,30 @@ export default function Page() {
         <div className="hint">
           Press the <span className="mono">spacebar</span> to generate color palettes!（鎖住的不會被替換）
         </div>
+
+        {/* 左側 + 按鈕（像 Coolors） */}
+        <button
+          onClick={addSlot}
+          title={colors.length >= MAX ? `最多 ${MAX} 格` : "新增一格"}
+          style={{
+            position: "fixed",
+            left: 18,
+            top: 120,
+            width: 44,
+            height: 44,
+            borderRadius: 999,
+            border: "1px solid rgba(0,0,0,.12)",
+            background: "#fff",
+            boxShadow: "0 6px 18px rgba(0,0,0,.10)",
+            zIndex: 9998,
+            cursor: colors.length >= MAX ? "not-allowed" : "pointer",
+            opacity: colors.length >= MAX ? 0.55 : 1,
+            fontSize: 22,
+            lineHeight: "44px"
+          }}
+        >
+          +
+        </button>
 
         {/* Full height columns */}
         <div className="palette">
@@ -243,7 +276,7 @@ export default function Page() {
           })}
         </div>
 
-        {/* Save panel (simple, like small drawer) */}
+        {/* Save panel */}
         <div style={{ padding: "12px 18px", borderTop: "1px solid rgba(0,0,0,.08)", background: "#fff" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <input
@@ -269,6 +302,10 @@ export default function Page() {
                 Refresh
               </button>
             )}
+
+            <span style={{ marginLeft: "auto", fontSize: 12, opacity: 0.65 }}>
+              格數：{colors.length}/{MAX}
+            </span>
           </div>
 
           {/* Saved palettes list */}
@@ -280,45 +317,3 @@ export default function Page() {
                   style={{
                     border: "1px solid rgba(0,0,0,.10)",
                     borderRadius: 12,
-                    padding: "8px 10px",
-                    background: "rgba(0,0,0,.03)",
-                    minWidth: 240
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button className="btn btn-sm btn-light" onClick={() => onLoadPalette(p)}>
-                        載入
-                      </button>
-                      <button className="btn btn-sm btn-light" onClick={() => onDeletePalette(p.id)}>
-                        刪除
-                      </button>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                    {(p.colors ?? []).slice(0, 5).map((hx, i) => (
-                      <div
-                        key={i}
-                        title={hx}
-                        style={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: 6,
-                          background: hx,
-                          border: "1px solid rgba(0,0,0,.12)"
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {toast && <div className="toast">{toast}</div>}
-    </div>
-  );
-}
